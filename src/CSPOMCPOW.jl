@@ -1,4 +1,4 @@
-module POMCPOW
+module CSPOMCPOW
 
 using POMDPs
 using BasicPOMCP
