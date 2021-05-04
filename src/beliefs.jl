@@ -3,12 +3,14 @@ struct POWNodeBelief{S,A,O,P}
     a::A # may be needed in push_weighted! and since a is constant for a node, we store it
     o::O
     dist::CategoricalVector{Tuple{S,Float64}}
+    
 
     POWNodeBelief{S,A,O,P}(m,a,o,d) where {S,A,O,P} = new(m,a,o,d)
     function POWNodeBelief{S, A, O, P}(m::P, s::S, a::A, sp::S, o::O, r) where {S, A, O, P}
         cv = CategoricalVector{Tuple{S,Float64}}((sp, convert(Float64, r)),
                                                  obs_weight(m, s, a, sp, o))
-        new(m, a, o, cv)
+        new(m, a, o, cv)#initial
+        
     end
 end
 
@@ -32,7 +34,9 @@ function push_weighted!(b::POWNodeBelief, ::POWNodeFilter, s, sp, r)
     w = obs_weight(b.model, s, b.a, sp, b.o)
     insert!(b.dist, (sp, convert(Float64, r)), w)
 end
-
+"""
+原来的r是在o下执行a得到的r，因为我们现在需要把s'加入到其他o分支中，所以这个r也应该变成在其他o下执行a得到的r，但是目前来说，我不知道应该如何实现，所以暂且不实现
+"""
 struct StateBelief{SRB<:POWNodeBelief}
     sr_belief::SRB
 end
