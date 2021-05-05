@@ -65,6 +65,9 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
             for pair in tree.generated[best_node]
                 o_temp=pair.first
                 hao_temp=pair.second
+                if(length(tree.sr_beliefs[hao_temp].dist.item)>1000) 
+                    break #限制粒子数为1000
+                end
                 push_weighted!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
             end
             """
@@ -72,8 +75,27 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
                 for pair in tree.generated[best_node]
                     o_temp=pair.first
                     hao_temp=pair.second
-                    push_weighted_ltc!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
+                    push_weighted!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
                 end
+            """
+            for pair in tree.generated[best_node]
+                o_temp=pair.first
+                hao_temp=pair.second
+                for i in 1:length(tree.sr_beliefs[hao_temp].dist.item)
+                    sp_temp=tree.sr_beliefs[hao_temp].dist.item[i][1]
+                    push_weighted_ltc!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp_temp, r)
+                end
+            end
+            """
+            Step 2:从任意一个其他o中，取出所有的(s',r)对中的s'，计算w，加入到现在的o的belief中
+            for pair in tree.generated[best_node]
+                o_temp=pair.first
+                hao_temp=pair.second
+                for i in 1:length(tree.sr_beliefs[hao_temp].dist.item)
+                    sp_temp=tree.sr_beliefs[hao_temp].dist.item[i][1]
+                    push_weighted_ltc!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp_temp, r)
+                end
+            end
             """
             push!(tree.total_n, 0)
             push!(tree.tried, Int[])
@@ -117,15 +139,20 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
         for pair in tree.generated[best_node]
             o_temp=pair.first
             hao_temp=pair.second
+            if(length(tree.sr_beliefs[hao_temp].dist.item)>1000) 
+                break #限制粒子数为1000
+            end
             push_weighted!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
         end
         """
         Step 1:把s'和weight加入到所有o中.
-            for pair in tree.generated[best_node]
-                o_temp=pair.first
-                hao_temp=pair.second
-                push_weighted_ltc!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
+        for pair in tree.generated[best_node]
+            o_temp=pair.first
+            hao_temp=pair.second
+            if(length(tree.sr_beliefs[hao_temp].dist.item)>1000) 
+                break #限制粒子数为1000
             end
+            push_weighted!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
         """
         #push_weighted!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp, r)
         sp, r = rand(sol.rng, tree.sr_beliefs[hao])
