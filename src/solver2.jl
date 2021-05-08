@@ -6,7 +6,7 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
     sol = pomcp.solver
 
     if POMDPs.isterminal(pomcp.problem, s) || d <= 0
-        return 0.0
+        return (0.0,1)
     end
 
     if sol.enable_action_pw
@@ -46,6 +46,8 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
     a = tree.a_labels[best_node]
 
     new_node = false
+    total_counts=0
+    total_reward=0.0
     if tree.n_a_children[best_node] <= sol.k_observation*(tree.n[best_node]^sol.alpha_observation)
 
         sp, o, r = @gen(:sp, :o, :r)(pomcp.problem, s, a, sol.rng)
@@ -81,10 +83,13 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
                 #step2
                 for i in 1:length(tree.sr_beliefs[first_pair_hao].dist.items)#step2
                     sp_temp=tree.sr_beliefs[first_pair_hao].dist.items[i][1]
-                    push_weighted!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp_temp, r)
+                    r_temp=tree.sr_beliefs[first_pair_hao].dist.items[i][2]
+                    push_weighted!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp_temp, r_temp)
                 end
+               
+               
             end
-            
+           
       
             
             push!(tree.total_n, 0)
@@ -97,6 +102,27 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
             tree.n_a_children[best_node] += 1
         end
         push!(tree.generated[best_node], o=>hao)
+            """
+            Step3:
+            对其他每个o进行补偿性采样，
+            """
+            for j in 1:(length(tree.generated[best_node])-1)
+                pair=tree.generated[best_node][j]
+                o_temp=pair.first
+                hao_temp=pair.second
+                before_weight=tree.sr_beliefs[hao_temp].dist.cdf[end-1]
+                before_sample_times=tree.total_n[hao_temp]
+                new_added_weight=tree.sr_beliefs[hao_temp].dist.cdf[end]-tree.sr_beliefs[hao_temp].dist.cdf[end-1]
+                cs_times=div(before_sample_times*new_added_weight,before_weight)#下取整
+                if (cs_times!=0)
+                    for i in 1:cs_times
+                        R_temp,counts_temp=simulate(pomcp, POWTreeObsNode(tree, hao_temp), sp, d-1)
+                        R = r + POMDPs.discount(pomcp.problem)*R_temp
+                        total_counts+=counts_temp
+                        total_reward+=R*counts_temp
+                    end
+                end
+            end
     else
 
         sp, r = @gen(:sp, :r)(pomcp.problem, s, a, sol.rng)
@@ -109,6 +135,12 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
 
     if new_node
         R = r + POMDPs.discount(pomcp.problem)*estimate_value(pomcp.solved_estimate, pomcp.problem, sp, POWTreeObsNode(tree, hao), d-1)
+        total_counts+=1
+        total_reward+=R
+        """
+        total_counts++
+        total_reward+=R
+        """
     else
         pair = rand(sol.rng, tree.generated[best_node])
         o = pair.first
@@ -126,21 +158,58 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
                 hao_temp=pair.second     
                 push_weighted!(tree.sr_beliefs[hao_temp], pomcp.node_sr_belief_updater, s, sp, r)
             end
+            """
+            Step2:补偿性采样
+            """
+             for pair in tree.generated[best_node]
+                 o_temp=pair.first
+                 hao_temp=pair.second
+                 before_weight=tree.sr_beliefs[hao_temp].dist.cdf[end-1]
+                 before_sample_times=tree.total_n[hao_temp]
+                 new_added_weight=tree.sr_beliefs[hao_temp].dist.cdf[end]-tree.sr_beliefs[hao_temp].dist.cdf[end-1]
+                 cs_times=div(before_sample_times*new_added_weight,before_weight)#下取整
+                 if (cs_times!=0)
+                     for i in 1:cs_times
+                         R_temp,counts_temp=simulate(pomcp, POWTreeObsNode(tree, hao_temp), sp, d-1)            
+                         R = r + POMDPs.discount(pomcp.problem)*R_temp
+                         total_reward+=R*counts_temp
+                         total_counts+=counts_temp
+                     end
+                 end
+             end
         end
         # push_weighted!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp, r)#默认把一个粒子加入到当前o
-       
-       
-        sp, r = rand(sol.rng, tree.sr_beliefs[hao])
+      
+       """
+       Step3:随机采样
+      
+       """
+       sp, r = rand(sol.rng, tree.sr_beliefs[hao])
+       R_temp,counts_temp=simulate(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
 
-        R = r + POMDPs.discount(pomcp.problem)*simulate(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
+       R = r + POMDPs.discount(pomcp.problem)*R_temp
+       total_counts+=counts_temp
+       total_reward+=R*counts_temp
+        # sp, r = rand(sol.rng, tree.sr_beliefs[hao])
+        # R = r + POMDPs.discount(pomcp.problem)*simulate(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
     end
 
-    tree.n[best_node] += 1
-    tree.total_n[h] += 1
+    """
+    返回Reward和次数
+    """
+    tree.n[best_node] += total_counts
+    tree.total_n[h] += total_counts
     if tree.v[best_node] != -Inf
-        tree.v[best_node] += (R-tree.v[best_node])/tree.n[best_node]
+        tree.v[best_node] = ((tree.n[best_node]-total_counts)*tree.v[best_node]+total_reward)/tree.n[best_node]
     end
+  
+    return (total_reward/total_counts,total_counts)
 
-    return R
+    # tree.n[best_node] += 1
+    # tree.total_n[h] += 1
+    # if tree.v[best_node] != -Inf
+    #     tree.v[best_node] += (R-tree.v[best_node])/tree.n[best_node]
+    # end  
+    # return R
 end
 
