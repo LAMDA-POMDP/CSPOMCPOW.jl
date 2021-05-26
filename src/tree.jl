@@ -3,6 +3,7 @@ struct POMCPOWTree{B,A,O,RB}
     n::Vector{Int}
     v::Vector{Float64}
     generated::Vector{Vector{Pair{O,Int}}}
+    generated_ltc::Vector{Vector{Pair{O,Int}}}
     a_child_lookup::Dict{Tuple{Int,O}, Int} # may not be maintained based on solver params
     a_labels::Vector{A}
     n_a_children::Vector{Int}
@@ -22,6 +23,7 @@ struct POMCPOWTree{B,A,O,RB}
         return new(
             sizehint!(Int[], sz),
             sizehint!(Int[], sz),
+            sizehint!(Vector{Pair{O,Int}}[], sz),
             sizehint!(Vector{Pair{O,Int}}[], sz),
             Dict{Tuple{Int,O}, Int}(),
             sizehint!(A[], sz),
@@ -43,6 +45,7 @@ end
     push!(tree.n, n)
     push!(tree.v, v)
     push!(tree.generated, Pair{O,Int}[])
+    push!(tree.generated_ltc, Pair{O,Int}[])
     push!(tree.a_labels, a)
     push!(tree.n_a_children, 0)
     if update_lookup
